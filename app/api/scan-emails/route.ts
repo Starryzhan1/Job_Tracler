@@ -56,7 +56,7 @@ If not a job email, return {"company": "Unknown", "position": "Unknown"}`,
   }
 }
 
-async function sendReportEmail(interviews: any[], rejections: any[]) {
+async function sendReportEmail(interviews: any[], rejections: any[], stats: { totalScanned: number; jobRelated: number }) {
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -77,6 +77,31 @@ async function sendReportEmail(interviews: any[], rejections: any[]) {
   const html = `
     <h2>Job Application Daily Report</h2>
     <p>Generated at 18:00 — ${new Date().toDateString()}</p>
+
+    <table style="border-collapse:collapse;margin-bottom:24px;background:#f8fafc;width:100%">
+      <tr>
+        <td style="padding:12px 20px;text-align:center">
+          <div style="font-size:28px;font-weight:bold">${stats.totalScanned}</div>
+          <div style="color:#64748b;font-size:12px">Emails scanned</div>
+        </td>
+        <td style="padding:12px 20px;text-align:center;border-left:1px solid #e2e8f0">
+          <div style="font-size:28px;font-weight:bold">${stats.jobRelated}</div>
+          <div style="color:#64748b;font-size:12px">Job-related found</div>
+        </td>
+        <td style="padding:12px 20px;text-align:center;border-left:1px solid #e2e8f0">
+          <div style="font-size:28px;font-weight:bold;color:#16a34a">${interviews.length}</div>
+          <div style="color:#64748b;font-size:12px">Interview invites</div>
+        </td>
+        <td style="padding:12px 20px;text-align:center;border-left:1px solid #e2e8f0">
+          <div style="font-size:28px;font-weight:bold;color:#dc2626">${rejections.length}</div>
+          <div style="color:#64748b;font-size:12px">Rejections</div>
+        </td>
+        <td style="padding:12px 20px;text-align:center;border-left:1px solid #e2e8f0">
+          <div style="font-size:28px;font-weight:bold;color:#d97706">${stats.jobRelated - interviews.length - rejections.length}</div>
+          <div style="color:#64748b;font-size:12px">Unclassified</div>
+        </td>
+      </tr>
+    </table>
 
     <h3 style="color:#16a34a">Interview Invites (${interviews.length})</h3>
     ${interviews.length > 0 ? `
@@ -132,6 +157,7 @@ export async function GET(request: Request) {
 
     const interviews: any[] = [];
     const rejections: any[] = [];
+    let jobRelated = 0;
 
     // Search emails from last 24 hours
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -160,6 +186,7 @@ export async function GET(request: Request) {
         );
       if (!isJobRelated) continue;
 
+      jobRelated++;
       const type = detectType(subject, source);
       if (type === "other") continue;
 
@@ -180,10 +207,13 @@ export async function GET(request: Request) {
     lock.release();
     await client.logout();
 
-    await sendReportEmail(interviews, rejections);
+    const stats = { totalScanned: uids.length, jobRelated };
+    await sendReportEmail(interviews, rejections, stats);
 
     return NextResponse.json({
       success: true,
+      totalScanned: uids.length,
+      jobRelated,
       interviews: interviews.length,
       rejections: rejections.length,
     });
