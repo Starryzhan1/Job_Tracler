@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
 import nodemailer from "nodemailer";
 
@@ -22,16 +22,6 @@ const REJECTION_KEYWORDS = [
   "müssen wir ihnen mitteilen", "ihre bewerbung nicht berücksichtigen",
   "nicht den anforderungen", "haben wir uns für einen anderen kandidaten",
 ];
-
-function getGmailClient() {
-  const auth = new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    "https://developers.google.com/oauthplayground"
-  );
-  auth.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
-  return google.gmail({ version: "v1", auth });
-}
 
 function detectType(subject: string, body: string): "interview" | "rejection" | "other" {
   const text = (subject + " " + body).toLowerCase();
@@ -66,33 +56,14 @@ If not a job email, return {"company": "Unknown", "position": "Unknown"}`,
   }
 }
 
-function decodeBody(payload: any): string {
-  const getText = (parts: any[]): string => {
-    for (const part of parts) {
-      if (part.mimeType === "text/plain" && part.body?.data) {
-        return Buffer.from(part.body.data, "base64").toString("utf-8");
-      }
-      if (part.parts) {
-        const found = getText(part.parts);
-        if (found) return found;
-      }
-    }
-    return "";
-  };
-  if (payload.body?.data) return Buffer.from(payload.body.data, "base64").toString("utf-8");
-  if (payload.parts) return getText(payload.parts);
-  return "";
-}
-
 async function sendReportEmail(interviews: any[], rejections: any[]) {
   const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
     auth: {
-      type: "OAuth2",
       user: process.env.GMAIL_USER,
-      clientId: process.env.GMAIL_CLIENT_ID,
-      clientSecret: process.env.GMAIL_CLIENT_SECRET,
-      refreshToken: process.env.GMAIL_REFRESH_TOKEN,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
   });
 
@@ -107,7 +78,7 @@ async function sendReportEmail(interviews: any[], rejections: any[]) {
     <h2>Job Application Daily Report</h2>
     <p>Generated at 18:00 — ${new Date().toDateString()}</p>
 
-    <h3 style="color:#16a34a">🎉 Interview Invites (${interviews.length})</h3>
+    <h3 style="color:#16a34a">Interview Invites (${interviews.length})</h3>
     ${interviews.length > 0 ? `
     <table style="border-collapse:collapse;width:100%">
       <tr style="background:#f0fdf4">
@@ -144,53 +115,70 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true,
+    auth: {
+      user: process.env.GMAIL_USER!,
+      pass: process.env.GMAIL_APP_PASSWORD!,
+    },
+    logger: false,
+  });
+
   try {
-    const gmail = getGmailClient();
+    await client.connect();
+    const lock = await client.getMailboxLock("INBOX");
 
-    // Search job-related emails from the last 24 hours
-    const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
-    const res = await gmail.users.messages.list({
-      userId: "me",
-      q: `(application OR interview OR offer OR position OR role OR candidacy OR hiring) after:${since}`,
-      maxResults: 50,
-    });
-
-    const messages = res.data.messages || [];
     const interviews: any[] = [];
     const rejections: any[] = [];
 
-    for (const msg of messages) {
-      const full = await gmail.users.messages.get({ userId: "me", id: msg.id! });
-      const headers = full.data.payload?.headers || [];
-      const subject = headers.find((h) => h.name === "Subject")?.value || "";
-      const from = headers.find((h) => h.name === "From")?.value || "";
-      const date = headers.find((h) => h.name === "Date")?.value || "";
-      const body = decodeBody(full.data.payload);
+    // Search emails from last 24 hours
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const uids = await client.search({ since });
 
-      const type = detectType(subject, body);
+    for (const uid of uids) {
+      const msg = await client.fetchOne(String(uid), {
+        envelope: true,
+        bodyStructure: true,
+        source: true,
+      });
+
+      const subject = msg.envelope?.subject || "";
+      const from = msg.envelope?.from?.[0]?.address || "";
+      const date = msg.envelope?.date
+        ? new Date(msg.envelope.date).toLocaleDateString()
+        : "";
+      const source = msg.source?.toString() || "";
+
+      // Skip non-job emails quickly before calling AI
+      const quickCheck = (subject + " " + source).toLowerCase();
+      const isJobRelated =
+        ["application", "applied", "position", "role", "candidacy",
+         "hiring", "interview", "offer", "bewerbung", "stelle"].some((kw) =>
+          quickCheck.includes(kw)
+        );
+      if (!isJobRelated) continue;
+
+      const type = detectType(subject, source);
       if (type === "other") continue;
 
-      const { company, position } = await extractJobInfo(subject, body, from);
-      const item = { company, position, date: new Date(date).toLocaleDateString() };
+      const { company, position } = await extractJobInfo(subject, source.slice(0, 1000), from);
+      const item = { company, position, date };
 
       if (type === "interview") {
         interviews.push(item);
         // Mark as UNREAD so it stands out
-        await gmail.users.messages.modify({
-          userId: "me",
-          id: msg.id!,
-          requestBody: { addLabelIds: ["UNREAD"] },
-        });
+        await client.messageFlagsRemove(String(uid), ["\\Seen"]);
       } else {
         rejections.push(item);
         // Mark as READ to clean up inbox
-        await gmail.users.messages.modify({
-          userId: "me",
-          id: msg.id!,
-          requestBody: { removeLabelIds: ["UNREAD"] },
-        });
+        await client.messageFlagsAdd(String(uid), ["\\Seen"]);
       }
     }
+
+    lock.release();
+    await client.logout();
 
     await sendReportEmail(interviews, rejections);
 
@@ -201,6 +189,7 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error(error);
+    await client.logout().catch(() => {});
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
