@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { ImapFlow } from "imapflow";
-import Anthropic from "@anthropic-ai/sdk";
 import nodemailer from "nodemailer";
 
 const INTERVIEW_KEYWORDS = [
@@ -30,30 +29,34 @@ function detectType(subject: string, body: string): "interview" | "rejection" | 
   return "other";
 }
 
-async function extractJobInfo(subject: string, body: string, from: string) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const message = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 256,
-    messages: [
-      {
-        role: "user",
-        content: `Extract job info from this email. Reply with JSON only, no markdown.
-From: ${from}
-Subject: ${subject}
-Body (first 500 chars): ${body.slice(0, 500)}
+function extractJobInfo(subject: string, from: string) {
+  // Extract company from sender domain
+  const domainMatch = from.match(/@([^.>]+)\./);
+  const domainCompany = domainMatch ? domainMatch[1] : null;
+  // Known ATS/recruiter domains to skip
+  const atsDomains = ["greenhouse", "lever", "workday", "taleo", "icims", "jobvite",
+    "smartrecruiters", "ashbyhq", "myworkdayjobs", "successfactors", "noreply",
+    "notifications", "mail", "email", "recruiting"];
+  const company = domainCompany && !atsDomains.includes(domainCompany.toLowerCase())
+    ? domainCompany.charAt(0).toUpperCase() + domainCompany.slice(1)
+    : "Unknown";
 
-JSON format: {"company": "...", "position": "..."}
-If not a job email, return {"company": "Unknown", "position": "Unknown"}`,
-      },
-    ],
-  });
-  try {
-    const text = message.content[0].type === "text" ? message.content[0].text : "{}";
-    return JSON.parse(text);
-  } catch {
-    return { company: "Unknown", position: "Unknown" };
+  // Extract position from subject line
+  const positionPatterns = [
+    /(?:for|re:|regarding|position:|role:)\s+(.+?)(?:\s+at\s+|\s*[-–|]\s*|\s*$)/i,
+    /^(.+?)\s+(?:at|@)\s+/i,
+    /(?:application|interview|offer)\s+(?:for\s+)?(.+?)(?:\s+at|\s*[-–]|\s*$)/i,
+  ];
+  let position = "Unknown";
+  for (const pattern of positionPatterns) {
+    const match = subject.match(pattern);
+    if (match?.[1] && match[1].length < 80) {
+      position = match[1].trim();
+      break;
+    }
   }
+
+  return { company, position };
 }
 
 async function sendReportEmail(interviews: any[], rejections: any[], stats: { totalScanned: number; jobRelated: number }) {
@@ -193,7 +196,7 @@ export async function GET(request: Request) {
       const type = detectType(subject, source);
       if (type === "other") continue;
 
-      const { company, position } = await extractJobInfo(subject, source.slice(0, 1000), from);
+      const { company, position } = extractJobInfo(subject, from);
       const item = { company, position, date };
 
       if (type === "interview") {
