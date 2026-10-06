@@ -3,9 +3,15 @@ import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 
 const INTERVIEW_KEYWORDS = [
+  // English
   "interview", "schedule a call", "next steps", "we'd like to meet",
   "phone screen", "technical interview", "coding challenge", "hiring manager",
   "zoom.us", "teams.microsoft.com", "meet.google.com", "calendly.com",
+  // German
+  "vorstellungsgespräch", "einladung zum gespräch", "telefoninterview",
+  "videointerview", "kennenlerngespräch", "erstgespräch", "vorstellungstermin",
+  "zu einem gespräch einladen", "nächste schritte", "technisches interview",
+  "coding aufgabe", "probeaufgabe", "persönliches gespräch",
 ];
 
 const REJECTION_KEYWORDS = [
