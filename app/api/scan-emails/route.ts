@@ -123,16 +123,6 @@ async function sendReportEmail(interviews: any[], rejections: any[], stats: { to
       ${interviews.map(formatRow).join("")}
     </table>` : "<p>No interview invites today.</p>"}
 
-    <h3 style="color:#dc2626">Rejections (${rejections.length})</h3>
-    ${rejections.length > 0 ? `
-    <table style="border-collapse:collapse;width:100%">
-      <tr style="background:#fef2f2">
-        <th style="padding:8px;border:1px solid #ddd;text-align:left">Company</th>
-        <th style="padding:8px;border:1px solid #ddd;text-align:left">Position</th>
-        <th style="padding:8px;border:1px solid #ddd;text-align:left">Date</th>
-      </tr>
-      ${rejections.map(formatRow).join("")}
-    </table>` : "<p>No rejections today.</p>"}
   `;
 
   await transporter.sendMail({
@@ -200,18 +190,21 @@ export async function GET(request: Request) {
 
       jobRelated++;
       const type = detectType(subject, source);
-      if (type === "other") continue;
+
+      if (type === "other") {
+        // Unclassified job-related email — mark unread so nothing important is missed
+        await client.messageFlagsRemove(String(uid), ["\\Seen"]);
+        continue;
+      }
 
       const { company, position } = extractJobInfo(subject, from);
       const item = { company, position, date };
 
       if (type === "interview") {
         interviews.push(item);
-        // Mark as UNREAD so it stands out
         await client.messageFlagsRemove(String(uid), ["\\Seen"]);
       } else {
         rejections.push(item);
-        // Mark as READ to clean up inbox
         await client.messageFlagsAdd(String(uid), ["\\Seen"]);
       }
     }
