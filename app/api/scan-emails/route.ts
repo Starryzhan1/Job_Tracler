@@ -10,10 +10,17 @@ const INTERVIEW_KEYWORDS = [
 ];
 
 const REJECTION_KEYWORDS = [
+  // English
   "unfortunately", "moved forward with other candidates", "not selected",
   "we regret to inform", "position has been filled", "decided not to move forward",
   "not moving forward", "we will not be", "thank you for your interest but",
   "other candidates whose experience", "we won't be moving",
+  // German
+  "leider", "absage", "haben wir uns für andere kandidaten entschieden",
+  "nicht berücksichtigen", "nicht in die engere auswahl", "andere bewerber",
+  "nicht weiterverfolgen", "bedauern wir", "kein passendes profil",
+  "müssen wir ihnen mitteilen", "ihre bewerbung nicht berücksichtigen",
+  "nicht den anforderungen", "haben wir uns für einen anderen kandidaten",
 ];
 
 function getGmailClient() {
