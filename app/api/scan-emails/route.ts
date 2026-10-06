@@ -161,7 +161,8 @@ export async function GET(request: Request) {
 
     // Search emails from last 24 hours
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const uids = await client.search({ since });
+    const searchResult = await client.search({ since });
+    const uids: number[] = Array.isArray(searchResult) ? searchResult : [];
 
     for (const uid of uids) {
       const msg = await client.fetchOne(String(uid), {
@@ -170,12 +171,14 @@ export async function GET(request: Request) {
         source: true,
       });
 
-      const subject = msg.envelope?.subject || "";
-      const from = msg.envelope?.from?.[0]?.address || "";
-      const date = msg.envelope?.date
-        ? new Date(msg.envelope.date).toLocaleDateString()
+      if (!msg) continue;
+
+      const subject = (msg as any).envelope?.subject || "";
+      const from = (msg as any).envelope?.from?.[0]?.address || "";
+      const date = (msg as any).envelope?.date
+        ? new Date((msg as any).envelope.date).toLocaleDateString()
         : "";
-      const source = msg.source?.toString() || "";
+      const source = (msg as any).source?.toString() || "";
 
       // Skip non-job emails quickly before calling AI
       const quickCheck = (subject + " " + source).toLowerCase();
