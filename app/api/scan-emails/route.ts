@@ -158,9 +158,9 @@ export async function GET(request: Request) {
     const rejections: any[] = [];
     let jobRelated = 0;
 
-    // Search emails from last 24 hours
+    // Search unread emails from last 24 hours
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const searchResult = await client.search({ since });
+    const searchResult = await client.search({ since, seen: false });
     const uids: number[] = Array.isArray(searchResult) ? searchResult : [];
 
     for (const uid of uids) {
