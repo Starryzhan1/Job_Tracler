@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Job Application Tracker
 
-## Getting Started
+Automates the emotional overhead of job hunting.
 
-First, run the development server:
+Scans your Gmail inbox daily, silently marks rejections as read so they don't pile up in your face, flags interview invites as unread so you only see what needs your attention, and sends a daily digest to your inbox.
+
+Built because job hunting is a marathon — and resilience requires protecting your headspace, not just tracking your pipeline.
+
+---
+
+## What it does
+
+- Scans **unread emails** from the last 24 hours only
+- Detects **interview invites** in English + German → marks unread
+- Detects **rejections** in English + German → marks read (silent cleanup)
+- Flags **unclassified job emails** → marks unread (nothing slips through)
+- Sends a **daily digest at 18:00** with stats: emails scanned, job-related found, interview invites, rejections, unclassified
+
+## Tech stack
+
+- **Next.js 16** (App Router, TypeScript)
+- **Vercel Cron Jobs** — triggers daily at 18:00
+- **Gmail IMAP** via imapflow
+- **Nodemailer** — sends the HTML report via Gmail SMTP
+- Deployed on **Vercel**
+
+## Setup
+
+### 1. Gmail App Password
+1. Enable 2-Step Verification on your Google account
+2. Go to [myaccount.google.com/security](https://myaccount.google.com/security) → App Passwords
+3. Create one named `Job Tracker` — copy the 16-character password (remove spaces)
+
+### 2. Environment variables
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+GMAIL_USER=your@gmail.com
+GMAIL_APP_PASSWORD=your16charpassword
+CRON_SECRET=generate_a_secret_with_openssl_rand_hex_32
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Add these in Vercel → Settings → Environment Variables.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Deploy
+Push to GitHub → import to Vercel → add environment variables → deploy.
+The cron job auto-configures from `vercel.json`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Detection keywords
 
-To learn more about Next.js, take a look at the following resources:
+**Interview invites (EN):** `interview`, `schedule a call`, `next steps`, `we'd like to meet`, `phone screen`, `technical interview`, `coding challenge`, meeting links: Zoom, Teams, Google Meet, Calendly
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Interview invites (DE):** `Vorstellungsgespräch`, `Kennenlerngespräch`, `Telefoninterview`, `Videointerview`, `nächste Schritte`, `Probeaufgabe`, and more
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Rejections (EN):** `unfortunately`, `not selected`, `we regret to inform`, `moved forward with other candidates`, and more
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Rejections (DE):** `leider`, `Absage`, `nicht berücksichtigen`, `bedauern wir`, and more
