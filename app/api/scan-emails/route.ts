@@ -179,6 +179,9 @@ export async function GET(request: Request) {
         : "";
       const source = (msg as any).source?.toString() || "";
 
+      // Skip the daily report email sent by this tool
+      if (from === process.env.GMAIL_USER) continue;
+
       // Skip non-job emails quickly before calling AI
       const quickCheck = (subject + " " + source).toLowerCase();
       const isJobRelated =
